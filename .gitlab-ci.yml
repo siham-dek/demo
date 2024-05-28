@@ -1,0 +1,11 @@
+# included templates
+include:
+  # Docker template
+  - project: "to-be-continuous/docker"
+    ref: "5.10"
+    file: "templates/gitlab-ci-docker.yml"
+
+
+# variables
+variables:
+  DOCKER_HEALTHCHECK_DISABLED: "true"
