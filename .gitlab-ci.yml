@@ -5,7 +5,55 @@ include:
     ref: "5.10"
     file: "templates/gitlab-ci-docker.yml"
 
+stages:
+  - build
+  - test
+  - package-build
+  - package-test
+  - infra
+  - deploy
+  - acceptance
+  - publish
+  - sign
+  - infra-prod
+  - production
+
 
 # variables
 variables:
   DOCKER_HEALTHCHECK_DISABLED: "true"
+  DOCKER_SNAPSHOT_IMAGE: $CI_REGISTRY_IMAGE/snapshot:$CI_COMMIT_REF_SLUG
+  DOCKER_RELEASE_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+ 
+sign:
+  variables:
+    COSIGN_YES: "true"
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+
+  before_script: 
+  - docker_snapshot_authent_token=$(echo -n "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')
+  - docker_snapshot_registry_host=$(echo "$DOCKER_SNAPSHOT_IMAGE" | cut -d/ -f1)
+  - export docker_snapshot_authent_token
+  - export docker_snapshot_registry_host
+  - docker_release_authent_token=$(echo -n "$CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')
+  - docker_release_registry_host=$(echo "$DOCKER_RELEASE_IMAGE" | cut -d/ -f1)
+  - export docker_release_authent_token
+  - export docker_release_registry_host
+  - docker_snapshot_config_json=$(echo -n "{\"auths\":{\"$docker_snapshot_registry_host\":{\"auth\":\"$docker_snapshot_authent_token\"},\"HttpHeaders\":{\"User-Agent\":\"$USER_AGENT\"}}}")
+  - docker_release_config_json=$(echo -n "{\"auths\":{\"$docker_release_registry_host\":{\"auth\":\"$docker_release_authent_token\"},\"HttpHeaders\":{\"User-Agent\":\"$USER_AGENT\"}}}")
+  - mkdir -p ".docker"
+  - echo "${docker_snapshot_config_json}" > ".docker/config.json"
+
+  stage: sign
+  image : alpine:latest
+  script:
+    - apk add --update cosign
+    - export COSIGN_EXPERIMENTAL=1
+    - echo $CI_REGISTRY_PASSWORD
+    - echo $CI_REGISTRY_USER
+    - echo ${SIGSTORE_ID_TOKEN}
+    - cosign sign --identity-token=${SIGSTORE_ID_TOKEN} --registry-username "$CI_REGISTRY_USER" --registry-password "$CI_REGISTRY_PASSWORD" $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+
+
